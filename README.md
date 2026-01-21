@@ -91,8 +91,10 @@ The `train.py` script automatically saves plots to the dataset folder:
 -   `RBF_Confusion_Matrix.png`
 -   `RBF_ROC_Curves.png`
 
+---
+
 ## 📦 Pre-trained Model
-The repository includes a pre-trained model: **`dataset/RBF_ConvNeXt.pkl`**.
+The repository includes a pre-trained model: **`RBF_ConvNeXt.pkl`**.
 
 If you want to use this model directly without training:
 1.  Ensure you have the `dataset/` folder structure.
@@ -100,7 +102,12 @@ If you want to use this model directly without training:
 
 ### 📚 Datasets Used
 This model was trained on the following datasets:
--   *[Insert dataset name/source here]*
--   *[Insert dataset name/source here]*
+-   CelebA - Total 23.948 Images: 19.158/4790
+-   [Selfies](https://www.kaggle.com/datasets/jkanthony/selfie-image-faces) - Total 1.676 Images: 1.340/336
+-   [Face Coverage](https://www.kaggle.com/datasets/mantasu/glasses-and-coverings) - Total 2.032 Images: 1.625/407
+-   [Stable Diffusion](https://www.kaggle.com/datasets/shahzaibshazoo/detect-ai-generated-faces-high-quality-dataset) - Total 1.000 Images: 800/200
+-   [GAN](https://www.kaggle.com/datasets/shavaizbutt/ai-face-dataset-3000-images?select=seed1000163.png), [GAN](https://www.kaggle.com/datasets/hamzaboulahia/hardfakevsrealfaces) - Total 3.697 Images: 2.957/740
+-   Nano Banana Pro - Total 143 Images: 114/29
+-   [Deepfake](https://www.kaggle.com/datasets/fatimahirshad/faceforensics-c32-frames-cropped-aligned) - Total 24.951 Images: 19.961/4.990
 
 > **Note**: If you have access to these datasets, you can reproduce the training by running `python preprocess.py` followed by `python train.py`.
