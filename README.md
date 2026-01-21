@@ -5,7 +5,7 @@ This project implements a hybrid machine learning pipeline to classify human fac
 ## 🧠 Architecture
 The system uses a **two-stage** approach:
 1.  **Feature Extraction**: A pre-trained `ConvNeXt Tiny` model (classifier removed) extracts 768-dimensional embeddings from images.
-2.  **Classification**: A Support Vector Machine (SVM) with an RBF kernel is trained on these embeddings to classify the images.
+2.  **Classification**: A SVM with an RBF kernel is trained on these embeddings to classify the images.
 
 **Why this approach?**
 -   **Speed**: Training an SVM on embeddings is much faster than fine-tuning a deep Neural Network.
@@ -37,7 +37,7 @@ The system uses a **two-stage** approach:
 
 ### 3. Data & Utilities
 -   **`nano_banana.py`**:
-    -   A script to generate synthetic "AI Fake" images using Google's Gemini Flash model.
+    -   A script to generate synthetic "AI Fake" images using Google's `nano-banana-pro-preview` model.
     -   Used to augment the dataset with high-quality AI faces.
     -   *Requires `gemini.env` with `API_KEY`.*
 -   **`low-weight_preprocess.py`**:
@@ -90,3 +90,17 @@ python predict.py
 The `train.py` script automatically saves plots to the dataset folder:
 -   `RBF_Confusion_Matrix.png`
 -   `RBF_ROC_Curves.png`
+
+## 📦 Pre-trained Model
+The repository includes a pre-trained model: **`dataset/RBF_ConvNeXt.pkl`**.
+
+If you want to use this model directly without training:
+1.  Ensure you have the `dataset/` folder structure.
+2.  Run `predict.py`.
+
+### 📚 Datasets Used
+This model was trained on the following datasets:
+-   *[Insert dataset name/source here]*
+-   *[Insert dataset name/source here]*
+
+> **Note**: If you have access to these datasets, you can reproduce the training by running `python preprocess.py` followed by `python train.py`.
