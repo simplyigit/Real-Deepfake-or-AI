@@ -5,10 +5,10 @@ This project implements a hybrid machine learning pipeline to classify human fac
 ## 🧠 Architecture
 The system uses a **two-stage** approach:
 1.  **Feature Extraction**: A pre-trained `ConvNeXt Tiny` model (classifier removed) extracts 768-dimensional embeddings from images.
-2.  **Classification**: A SVM with an RBF kernel is trained on these embeddings to classify the images.
+2.  **Classification**: A classifier trained on these embeddings to classify the images.
 
 **Why this approach?**
--   **Speed**: Training an SVM on embeddings is much faster than fine-tuning a deep Neural Network.
+-   **Speed**: Training on embeddings is much faster than fine-tuning a deep Neural Network.
 -   **Accuracy**: ConvNeXt provides state-of-the-art feature representation.
 
 ---
@@ -27,9 +27,9 @@ The system uses a **two-stage** approach:
     -   **Run this first!**
 -   **`train.py`**:
     -   Loads the precomputed embeddings (`.npy`).
-    -   Trains the SVM (RBF Kernel).
+    -   Trains the classifier.
     -   Evaluates performance (Accuracy, Confusion Matrix, ROC Curves).
-    -   Saves the trained model to `dataset/RBF_ConvNeXt.pkl`.
+    -   Saves the trained model.
 -   **`predict.py`**:
     -   Takes a single image name as input.
     -   Loads the trained model (`.pkl`) and the ConvNeXt extractor.
@@ -88,13 +88,13 @@ python predict.py
 
 ## 📊 Results
 The `train.py` script automatically saves plots to the dataset folder:
--   `RBF_Confusion_Matrix.png`
--   `RBF_ROC_Curves.png`
+-   `Confusion_Matrix.png`
+-   `ROC_Curves.png`
 
 ---
 
 ## 📦 Pre-trained Model
-The repository includes a pre-trained model: **`RBF_ConvNeXt.pkl`**.
+The repository includes a pre-trained model: **`SGD_ConvNeXt_nano.pkl`**.
 
 If you want to use this model directly without training:
 1.  Ensure you have the `dataset/` folder structure.
