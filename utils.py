@@ -107,7 +107,9 @@ class ImageListDataset(Dataset):
             return image, self.labels[idx], str(path)
         return image, str(path)
 
-def extract_batch_features(model, file_paths, labels=None, batch_size=64, num_workers=2, 
+import time
+
+def extract_batch_features(model, file_paths, labels=None, batch_size=128, num_workers=0, 
                            device=config.DEVICE, augment=False):
     """
     Extracts embeddings for a list of file paths in batches using DataLoader.
@@ -125,9 +127,14 @@ def extract_batch_features(model, file_paths, labels=None, batch_size=64, num_wo
     
     features = []
     out_labels = []
+    total_batches = len(loader)
+    total_imgs = len(file_paths)
+    processed_imgs = 0
+    t_start = time.time()
+    last_log = t_start
     
     with torch.no_grad():
-        for batch in loader:
+        for b_idx, batch in enumerate(loader):
             if labels is not None:
                 imgs, lbls, _ = batch
                 out_labels.append(lbls.numpy())
@@ -137,6 +144,14 @@ def extract_batch_features(model, file_paths, labels=None, batch_size=64, num_wo
             out = model(imgs).cpu()
             emb = out.reshape(out.shape[0], -1).numpy()
             features.append(emb)
+            processed_imgs += imgs.size(0)
+
+            if time.time() - last_log >= 3 or (b_idx + 1) == total_batches:
+                elapsed = time.time() - t_start
+                rate = processed_imgs / max(1e-5, elapsed)
+                eta = (total_imgs - processed_imgs) / max(1e-5, rate)
+                print(f"Batch [{b_idx+1}/{total_batches}] - {processed_imgs}/{total_imgs} images ({processed_imgs/total_imgs*100:.1f}%) - {rate:.1f} imgs/s - ETA: {eta:.0f}s")
+                last_log = time.time()
             
     all_features = np.concatenate(features, axis=0) if features else np.empty((0, config.EMBEDDING_DIM))
     if labels is not None:

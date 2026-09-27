@@ -45,8 +45,8 @@ def main():
     parser = argparse.ArgumentParser(description="Extract ConvNeXt embeddings for dataset images.")
     parser.add_argument("--dataset-dir", type=str, default=str(config.DATASET_PATH),
                         help="Path to dataset directory containing real/, ai_fake/, and deepfake/ subfolders.")
-    parser.add_argument("--batch-size", type=int, default=64, help="Batch size for feature extraction.")
-    parser.add_argument("--num-workers", type=int, default=2, help="Number of DataLoader workers.")
+    parser.add_argument("--batch-size", type=int, default=128, help="Batch size for feature extraction (default: 128).")
+    parser.add_argument("--num-workers", type=int, default=0, help="Number of DataLoader workers (default: 0 for optimal Apple Silicon throughput).")
     parser.add_argument("--output-dir", type=str, default=str(config.DATASET_PATH),
                         help="Directory where output .npy files will be saved.")
     parser.add_argument("--keep-layernorm", action="store_true",
