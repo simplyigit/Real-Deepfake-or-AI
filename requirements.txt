@@ -6,3 +6,6 @@ matplotlib
 seaborn
 Pillow
 joblib
+google-genai
+python-dotenv
+tqdm

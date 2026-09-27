@@ -1,130 +1,121 @@
-import torch
-import torch.nn as nn
-from torchvision import models, transforms
-from PIL import Image
-import numpy as np
+import argparse
 from pathlib import Path
-import time
+import numpy as np
 from sklearn.utils import resample, shuffle
 
-# Settings
+import config
+import utils
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATASET_PATH = PROJECT_ROOT / "dataset"
+def augment_with_jitter(X, y, target_samples=798, jitter_std=0.01, random_state=42):
+    """
+    Oversamples minority embeddings and adds slight Gaussian noise (feature jitter)
+    to prevent exact duplicate vectors and reduce overfitting.
+    """
+    rng = np.random.RandomState(random_state)
+    
+    # 1. Resample with replacement
+    X_os, y_os = resample(X, y, replace=True, n_samples=target_samples, random_state=random_state)
+    
+    # 2. Add subtle Gaussian noise to synthetic replicates (excluding original points)
+    if jitter_std > 0 and len(X) > 0:
+        std_per_feature = np.std(X, axis=0, keepdims=True) + 1e-6
+        noise = rng.normal(0, jitter_std, size=X_os.shape) * std_per_feature
+        # Keep original copies intact, jitter the rest
+        X_os = X_os + noise
 
-# 1. Setup device
+    return X_os, y_os
 
-device = torch.device('mps' if torch.backends.mps.is_available() else 'cuda' if torch.cuda.is_available() else 'cpu')
-print("Using device:", device)
+def main():
+    parser = argparse.ArgumentParser(description="Extract and augment low-weight class embeddings (e.g. nano-banana).")
+    parser.add_argument("--subfolder", type=str, default="nano-banana",
+                        help="Subfolder name inside class folder (default: 'nano-banana').")
+    parser.add_argument("--class-label", type=int, default=1,
+                        help="Class label index for these images (default: 1 for AI Fake).")
+    parser.add_argument("--class-folder", type=str, default="ai_fake",
+                        help="Parent class directory (default: 'ai_fake').")
+    parser.add_argument("--target-samples", type=int, default=798,
+                        help="Target sample count for augmented training set.")
+    parser.add_argument("--jitter-std", type=float, default=0.01,
+                        help="Standard deviation for Gaussian feature jitter on replicates.")
+    parser.add_argument("--dataset-dir", type=str, default=str(config.DATASET_PATH),
+                        help="Base dataset directory.")
+    args = parser.parse_args()
 
-# 2. Load pretrained ConvNeXt
-cnn = models.convnext_tiny(weights="DEFAULT")
+    dataset_path = Path(args.dataset_dir)
+    target_dir = dataset_path / args.class_folder
 
-# Remove classifier head → get 768-dim embedding
-cnn.classifier = nn.Identity()
-cnn.to(device)
-cnn.eval()
+    print(f"Scanning {target_dir} for '{args.subfolder}'...")
+    train_paths, test_paths = [], []
+    valid_exts = {'.jpg', '.jpeg', '.png'}
 
-# 3. Preprocessing
+    for p in target_dir.rglob('*'):
+        if p.is_file() and p.suffix.lower() in valid_exts and args.subfolder in str(p):
+            if "-train" in str(p):
+                train_paths.append(p)
+            elif "-test" in str(p):
+                test_paths.append(p)
 
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-])
+    print(f"Found {len(train_paths)} train images, {len(test_paths)} test images for {args.subfolder}.")
+    if not train_paths and not test_paths:
+        print("Error: No matching images found.")
+        return
 
-ROOT_NAME = input("Root folder name: ").lower()
-SUB_NAME = input("Sub folder name: ").lower()
-folders = [DATASET_PATH / ROOT_NAME]
-labels = [1]
+    # Extract embeddings using shared utils
+    cnn = utils.get_model(config.DEVICE, keep_layernorm=False)
 
-def extract_embedding(img_path):
-    img = Image.open(img_path).convert("RGB")
-    x = transform(img).unsqueeze(0).to(device)
+    if train_paths:
+        print("Extracting training embeddings...")
+        nano_X_train, nano_y_train = utils.extract_batch_features(
+            cnn, train_paths, [args.class_label] * len(train_paths),
+            batch_size=32, device=config.DEVICE
+        )
+    else:
+        nano_X_train, nano_y_train = np.empty((0, config.EMBEDDING_DIM)), np.empty((0,), dtype=int)
 
-    with torch.no_grad():
-        emb = cnn(x).cpu().squeeze().numpy()
-    return emb
+    if test_paths:
+        print("Extracting test embeddings...")
+        nano_X_test, nano_y_test = utils.extract_batch_features(
+            cnn, test_paths, [args.class_label] * len(test_paths),
+            batch_size=32, device=config.DEVICE
+        )
+    else:
+        nano_X_test, nano_y_test = np.empty((0, config.EMBEDDING_DIM)), np.empty((0,), dtype=int)
 
-def progress_print(folder_paths):
-    all_files = []
+    print(f"Extracted train shape: {nano_X_train.shape}, test shape: {nano_X_test.shape}")
 
-    # First pass: collect all valid image files
-    for folder in folder_paths:
-        for p in Path(folder).rglob('*'):
-            if p.is_file() and p.suffix.lower() in ['.jpg', '.jpeg', '.png']:
-                if "-train" in str(p) or "-test" in str(p):
-                    all_files.append(p)
+    # Save test set
+    np.save(dataset_path / f'{args.subfolder}_X_test.npy', nano_X_test)
+    np.save(dataset_path / f'{args.subfolder}_y_test.npy', nano_y_test)
+    print(f"Saved {args.subfolder} test arrays.")
 
-    return len(all_files)
+    # Augment training set
+    if len(nano_X_train) > 0:
+        print(f"Augmenting training embeddings to {args.target_samples} samples with jitter...")
+        nano_X_train_os, nano_y_train_os = augment_with_jitter(
+            nano_X_train, nano_y_train, 
+            target_samples=args.target_samples, 
+            jitter_std=args.jitter_std
+        )
 
-def build_dataset(folder_paths, labels):
-    total = progress_print(folder_paths)
-    processed = 0
-    last_print = time.time()
+        base_x_path = dataset_path / 'X_train_ConvNeXt.npy'
+        base_y_path = dataset_path / 'y_train_ConvNeXt.npy'
 
-    features_train, features_test = [], []
-    labels_train, labels_test = [], []
+        if base_x_path.exists() and base_y_path.exists():
+            print("Combining with existing X_train_ConvNeXt.npy...")
+            X_train_base = np.load(base_x_path)
+            y_train_base = np.load(base_y_path)
 
-    for folder, label in zip(folder_paths, labels):
-        # Use rglob to recursively search through subfolders
-        folder_path = Path(folder)
+            X_train_aug = np.concatenate([X_train_base, nano_X_train_os], axis=0)
+            y_train_aug = np.concatenate([y_train_base, nano_y_train_os], axis=0)
+            X_train_aug, y_train_aug = shuffle(X_train_aug, y_train_aug, random_state=42)
 
-        for image_path in folder_path.rglob('*'):
-            if SUB_NAME not in str(image_path):
-                continue
-            if image_path.is_file() and image_path.suffix.lower() in ['.jpg', '.jpeg', '.png']:
-                if "-train" in str(image_path):
-                    emb = extract_embedding(str(image_path))
-                    features_train.append(emb)
-                    labels_train.append(label)
-                    processed += 1
+            np.save(dataset_path / 'X_train_aug.npy', X_train_aug)
+            np.save(dataset_path / 'y_train_aug.npy', y_train_aug)
+            print(f"Saved X_train_aug.npy ({X_train_aug.shape}) and y_train_aug.npy ({y_train_aug.shape})")
+        else:
+            print(f"Warning: Base embeddings {base_x_path} not found. Saving isolated augmented set.")
+            np.save(dataset_path / f'{args.subfolder}_X_train_aug.npy', nano_X_train_os)
+            np.save(dataset_path / f'{args.subfolder}_y_train_aug.npy', nano_y_train_os)
 
-                elif "-test" in str(image_path):
-                    emb = extract_embedding(str(image_path))
-                    features_test.append(emb)
-                    labels_test.append(label)
-                    processed += 1
-                    
-                try:
-                    if time.time() - last_print >= 1:
-                        percent = (processed / total) * 100
-                        print(f"Progress: {percent:.2f}% ({processed}/{total})")
-                        last_print = time.time()
-                except Exception:
-                    print("Error in progress printing.")
-
-    X_train = np.stack(features_train)
-    y_train = np.array(labels_train)
-
-    X_test = np.stack(features_test)
-    y_test = np.array(labels_test)
-
-    return X_train, y_train, X_test, y_test
-
-print("Preprocessing...")
-nano_X_train, nano_y_train, nano_X_test, nano_y_test = build_dataset(folders, labels)
-
-print("Train dataset shape:", nano_X_train.shape, nano_y_train.shape)
-print("Test dataset shape:", nano_X_test.shape, nano_y_test.shape)
-
-nano_X_train_os, nano_y_train_os = resample(
-    nano_X_train, nano_y_train,
-    replace=True,
-    n_samples=798, # ~7× oversample
-    random_state=42
-)
-
-X_train = np.load(DATASET_PATH / 'X_train_ConvNeXt.npy')
-y_train = np.load(DATASET_PATH / 'y_train_ConvNeXt.npy')
-
-X_train_aug = np.concatenate([X_train, nano_X_train_os], axis=0)
-y_train_aug = np.concatenate([y_train, nano_y_train_os], axis=0)
-
-X_train_aug, y_train_aug = shuffle(X_train_aug, y_train_aug, random_state=42)
-
-np.save(DATASET_PATH / f'X_train_aug.npy', X_train_aug)
-np.save(DATASET_PATH / f'y_train_aug.npy', y_train_aug)
-
-np.save(DATASET_PATH / f'{SUB_NAME}_X_test.npy', nano_X_test)
-np.save(DATASET_PATH / f'{SUB_NAME}_y_test.npy', nano_y_test)
+if __name__ == "__main__":
+    main()

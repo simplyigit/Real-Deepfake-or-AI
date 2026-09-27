@@ -1,113 +1,161 @@
-# Real, Deepfake or AI Classifier (ConvNeXt + SVM)
+# Real, Deepfake or AI Classifier (ConvNeXt + Linear/RBF SVM)
 
-This project implements a hybrid machine learning pipeline to classify human faces as **Real**, **AI Generated**, or **Deepfake**.
+An end-to-end computer vision and machine learning pipeline to classify human face images as **Real**, **AI Generated**, or **Deepfake**.
 
-## 🧠 Architecture
-The system uses a **two-stage** approach:
-1.  **Feature Extraction**: A pre-trained `ConvNeXt Tiny` model (classifier removed) extracts 768-dimensional embeddings from images.
-2.  **Classification**: A classifier trained on these embeddings to classify the images.
+---
 
-**Why this approach?**
--   **Speed**: Training on embeddings is much faster than fine-tuning a deep Neural Network.
--   **Accuracy**: ConvNeXt provides state-of-the-art feature representation.
+## 🧠 Architecture Overview
+
+The system uses an efficient two-stage transfer learning architecture:
+
+```mermaid
+flowchart LR
+    A[Face Image 224x224] --> B[ConvNeXt-Tiny Backbone]
+    B --> C[768-D Embedding Vector]
+    C --> D[SGDClassifier / Linear SVM]
+    D --> E[Class Probabilities: Real / AI / Deepfake]
+```
+
+1. **Feature Extraction**: A pre-trained `ConvNeXt-Tiny` vision backbone extracts 768-dimensional dense visual representations.
+2. **Classification**: A calibrated linear SGD / Support Vector Machine (SVM) classifies embeddings in feature space with fast training and near-instant inference.
 
 ---
 
 ## 📂 Project Structure
 
-### 1. Core Logic
--   **`config.py`**: Central configuration file. Contains paths (`DATASET_PATH`), device settings (MPS/CUDA/CPU), and constants.
--   **`utils.py`**: Shared utilities. Handles loading the ConvNeXt model and defining standard image transformations (Resize, Normalize).
-
-### 2. Main Pipeline
--   **`preprocess.py`**:
-    -   Scans the `dataset/` folder for images.
-    -   Passes them through ConvNeXt to generate embeddings.
-    -   Saves the embeddings as `.npy` files (e.g., `X_train_ConvNeXt.npy`).
-    -   **Run this first!**
--   **`train.py`**:
-    -   Loads the precomputed embeddings (`.npy`).
-    -   Trains the classifier.
-    -   Evaluates performance (Accuracy, Confusion Matrix, ROC Curves).
-    -   Saves the trained model.
--   **`predict.py`**:
-    -   Takes a single image name as input.
-    -   Loads the trained model (`.pkl`) and the ConvNeXt extractor.
-    -   Predicts if the image is Real, AI, or Deepfake.
-
-### 3. Data & Utilities
--   **`nano_banana.py`**:
-    -   A script to generate synthetic "AI Fake" images using Google's `nano-banana-pro-preview` model.
-    -   Used to augment the dataset with high-quality AI faces.
-    -   *Requires `gemini.env` with `API_KEY`.*
--   **`low-weight_preprocess.py`**:
-    -   A specialized preprocessing script for augmenting specific low-weight classes (like the `nano-banana` dataset) by oversampling.
--   **`dataset_split.py`**:
-    -   Helper tool to organize raw images into `train` and `test` folders based on a split ratio (default 80/20).
--   **`crop.py`**:
-    -   Helper tool to center-crop images to focus on the face, improving embedding quality.
--   **`visualize_boundaries.py`**:
-    -   Uses Linear Discriminant Analysis (LDA) to project the 768-dim embeddings into 2D.
-    -   Visualizes the SVM decision boundaries to show how the model separates classes.
+```text
+├── config.py                 # Central configuration, dynamic dataset discovery, and device settings
+├── utils.py                  # ConvNeXt loader, transform pipeline, batch extraction via DataLoader
+├── preprocess.py             # High-throughput batched image feature extraction to .npy files
+├── train.py                  # Training, evaluation, calibration, and metric plotting (ROC, Confusion Matrix)
+├── predict.py                # Command-line & interactive single-image inference
+├── visualize_boundaries.py   # 2D LDA projection and proxy SVM decision boundary visualizer
+├── dataset_split.py          # Group-aware (video/subject-level) train/test splitter preventing data leakage
+├── crop.py                   # Proportional, non-destructive face center-cropping utility
+├── nano_banana.py            # Synthetic face generator using Google Gemini & Nano-Banana models
+├── requirements.txt          # Python dependencies
+├── SGD_ConvNeXt_nano.pkl     # Pre-trained classifier weights
+└── gemini.env.example        # Environment variable template for Gemini API key
+```
 
 ---
 
-## 🚀 Setup & Usage
+## 🚀 Setup & Installation
 
-### 1. Install Dependencies
+### 1. Clone & Set Up Environment
 ```bash
+git clone <repo-url>
+cd "Real, Deepfake or AI (ConvNeXt)"
+
+# Create and activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-### 2. Prepare Data
-Place your images in `dataset/` structured by class (e.g., `real`, `deepfake`).
-If you need to generate AI images:
+### 2. Configure API Key (Optional, for synthetic image generation)
 ```bash
-python nano_banana.py
+cp gemini.env.example gemini.env
+# Edit gemini.env and set your Google Gemini API key:
+# API_KEY=your_key_here
 ```
 
-### 3. Preprocess
-Convert images to embeddings:
-```bash
-python preprocess.py
-```
+---
 
-### 4. Train
-Train the classifier:
-```bash
-python train.py
-```
+## 💻 CLI Usage Guide
 
-### 5. Predict
-Test on a specific image (place it in `dataset/t_images/`):
+### 1. Inference / Prediction (`predict.py`)
+Classify an individual face image directly from the command line:
+
 ```bash
+# Pass an image directly
+python predict.py --image path/to/face.jpg
+
+# Or pass a name from dataset/t_images/
+python predict.py --image test.jpg
+
+# Or run interactively (prompts for input)
 python predict.py
 ```
 
+Sample output:
+```text
+=============================================
+           PREDICTION RESULTS
+=============================================
+File:       /path/to/t_images/test.jpg
+Prediction: REAL
+Confidence: 90.3%
+
+Class Probabilities:
+  [0] Real       :  90.3%  ##################
+  [1] AI Fake    :   9.7%  #
+  [2] Deepfake   :   0.0%  
+=============================================
+```
+
+### 2. Train or Evaluate (`train.py`)
+Train a new classifier on precomputed embeddings or evaluate an existing checkpoint:
+
+```bash
+# Evaluate existing pre-trained model (saves plots to outputs/)
+python train.py --classifier sgd
+
+# Train a new SGD classifier with balanced class weighting
+python train.py --classifier sgd --train
+
+# Train an RBF kernel SVM
+python train.py --classifier rbf --train
+```
+
+Outputs generated in `outputs/`:
+- `<model>_Confusion_Matrix.png`
+- `<model>_ROC_Curves.png`
+- `<model>_Classification_Report.txt`
+
+### 3. Feature Extraction (`preprocess.py`)
+Extract 768-D embeddings from image directories in batches using PyTorch `DataLoader`:
+
+```bash
+python preprocess.py --batch-size 64 --num-workers 4
+```
+
+### 4. Leakage-Free Dataset Splitting (`dataset_split.py`)
+Split a directory of images into `{name}-train` and `{name}-test`. When processing video frames (e.g. FaceForensics++), it automatically groups frames by video ID so no frames from the same video are leaked across splits:
+
+```bash
+python dataset_split.py --folder dataset/deepfake/face2face --train-ratio 0.8 --seed 42
+```
+
+### 5. Decision Boundary Visualization (`visualize_boundaries.py`)
+Project 768-D features to 2D using Linear Discriminant Analysis (LDA) and plot the decision surfaces:
+
+```bash
+python visualize_boundaries.py --kernel rbf --samples 1000
+```
+Saves `RBF_Decision_Boundary.png` to `outputs/`.
+
 ---
 
-## 📊 Results
-The `train.py` script automatically saves plots to the dataset folder:
--   `Confusion_Matrix.png`
--   `ROC_Curves.png`
+## 📊 Pre-trained Model & Benchmarks
+
+The repository includes a pre-trained checkpoint: **`SGD_ConvNeXt_nano.pkl`**.
+
+| Metric | Real (0) | AI Fake (1) | Deepfake (2) | Macro Avg |
+| :--- | :---: | :---: | :---: | :---: |
+| **Precision** | 99.5% | 89.5% | 99.7% | 96.2% |
+| **Recall**    | 97.7% | 97.9% | 99.8% | 98.5% |
+| **F1-Score**  | 98.6% | 93.5% | 99.8% | 97.3% |
+| **Overall Accuracy** | \multicolumn{4}{c}{**98.66%** (11,493 test samples)} |
 
 ---
 
-## 📦 Pre-trained Model
-The repository includes a pre-trained model: **`SGD_ConvNeXt_nano.pkl`**.
+## 🎓 Academic & Scientific Considerations
 
-If you want to use this model directly without training:
-1.  Ensure you have the `dataset/` folder structure.
-2.  Run `predict.py`.
+When presenting or citing this work for academic research or university evaluation:
 
-### 📚 Datasets Used
-This model was trained on the following datasets:
--   CelebA - Total 23.948 Images: 19.158/4790
--   [Selfies](https://www.kaggle.com/datasets/jkanthony/selfie-image-faces) - Total 1.676 Images: 1.340/336
--   [Face Coverage](https://www.kaggle.com/datasets/mantasu/glasses-and-coverings) - Total 2.032 Images: 1.625/407
--   [Stable Diffusion](https://www.kaggle.com/datasets/shahzaibshazoo/detect-ai-generated-faces-high-quality-dataset) - Total 1.000 Images: 800/200
--   [GAN](https://www.kaggle.com/datasets/shavaizbutt/ai-face-dataset-3000-images?select=seed1000163.png), [GAN](https://www.kaggle.com/datasets/hamzaboulahia/hardfakevsrealfaces) - Total 3.697 Images: 2.957/740
--   Nano Banana Pro - Total 143 Images: 114/29
--   [Deepfake](https://www.kaggle.com/datasets/fatimahirshad/faceforensics-c32-frames-cropped-aligned) - Total 24.951 Images: 19.961/4.990
-
-> **Note**: If you have access to these datasets, you can reproduce the training by running `python preprocess.py` followed by `python train.py`.
+1. **Video-Level vs. Frame-Level Splitting**: In video deepfake datasets (e.g., FaceForensics++), frame-level random splitting causes temporal leakage because adjacent frames from the same video share identical lighting, subject identity, and background. To test real-world generalization, splits must group frames strictly by video or subject identity using `dataset_split.py`.
+2. **Domain Bias & Confounder Generalization**: In multi-source datasets, models can learn to distinguish dataset signatures (e.g., FaceForensics H.264 video compression vs. CelebA JPEG quantization vs. StyleGAN frequency fingerprints) rather than universal facial anomalies. Cross-dataset testing on unseen in-the-wild videos is recommended for production deployments.
+3. **Dimensionality Reduction Disclaimer**: The 2D boundary plots produced by `visualize_boundaries.py` represent a proxy model fitted on a 2D LDA projection for qualitative cluster analysis, while the true classification decision boundaries operate across 768 dimensions.
