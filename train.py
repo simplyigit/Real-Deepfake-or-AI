@@ -56,10 +56,10 @@ def load_data(dataset_path):
     print(f"Test features:  {X_test.shape}, labels: {y_test.shape}")
     return X_train, y_train, X_test, y_test
 
-def build_classifier(classifier_type="sgd"):
-    """Instantiates a classifier according to type."""
+def build_classifier(classifier_type="sgd", alpha=0.001):
+    """Instantiates a classifier according to type with L2 regularization."""
     if classifier_type == "sgd":
-        return SGDClassifier(loss='hinge', class_weight='balanced', max_iter=1000, random_state=42, tol=1e-3)
+        return SGDClassifier(loss='hinge', penalty='l2', alpha=alpha, class_weight='balanced', max_iter=2000, random_state=42, tol=1e-3)
     elif classifier_type == "rbf":
         return svm.SVC(kernel='rbf', gamma='scale', random_state=42, C=1.0)
     elif classifier_type == "linear_svm":
@@ -136,6 +136,8 @@ def main():
                         help="Path to directory containing precomputed .npy embeddings.")
     parser.add_argument("--output-dir", type=str, default=str(config.OUTPUTS_DIR),
                         help="Directory to save evaluation plots and reports.")
+    parser.add_argument("--alpha", type=float, default=0.001,
+                        help="L2 penalty parameter for SGDClassifier (default: 0.001 to prevent shortcut learning).")
     args = parser.parse_args()
 
     # Determine model checkpoint path
@@ -157,8 +159,8 @@ def main():
         sys.exit(1)
 
     if args.train:
-        print(f"\nTraining {args.classifier.upper()} classifier...")
-        model = build_classifier(args.classifier)
+        print(f"\nTraining {args.classifier.upper()} classifier (alpha={args.alpha})...")
+        model = build_classifier(args.classifier, alpha=args.alpha)
         model.fit(X_train, y_train)
         model_path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(model, model_path)
@@ -166,7 +168,7 @@ def main():
     else:
         if not model_path.exists():
             print(f"Checkpoint not found at {model_path}. Training a new {args.classifier.upper()} model...")
-            model = build_classifier(args.classifier)
+            model = build_classifier(args.classifier, alpha=args.alpha)
             model.fit(X_train, y_train)
             model_path.parent.mkdir(parents=True, exist_ok=True)
             joblib.dump(model, model_path)

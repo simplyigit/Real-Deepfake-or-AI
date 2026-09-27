@@ -1,3 +1,4 @@
+import io
 import torch
 import torch.nn as nn
 from torchvision import models, transforms
@@ -6,14 +7,46 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 import config
 
-def get_transform():
-    """Returns the standard image transformation pipeline."""
-    return transforms.Compose([
-        transforms.Resize((224, 224)),
+class RandomJPEGCompression(object):
+    """
+    Simulates varied JPEG compression artifacts (quality 50-95) to destroy
+    camera/video sensor quantization shortcuts and enforce semantic robustness.
+    """
+    def __init__(self, quality_range=(50, 95), p=0.5):
+        self.quality_range = quality_range
+        self.p = p
+
+    def __call__(self, img):
+        if np.random.rand() > self.p:
+            return img
+        quality = int(np.random.randint(self.quality_range[0], self.quality_range[1]))
+        buffer = io.BytesIO()
+        img.save(buffer, format="JPEG", quality=quality)
+        buffer.seek(0)
+        return Image.open(buffer).convert("RGB")
+
+def get_transform(augment=False):
+    """
+    Returns image transformation pipeline.
+    
+    Args:
+        augment: If True, adds JPEG compression perturbation, horizontal flips,
+                 subtle color jitter, and Gaussian blur to destroy domain/compression bias.
+    """
+    transform_list = [transforms.Resize((224, 224))]
+    if augment:
+        transform_list.extend([
+            RandomJPEGCompression(quality_range=(50, 95), p=0.5),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.ColorJitter(brightness=0.15, contrast=0.15, saturation=0.1),
+            transforms.GaussianBlur(kernel_size=(3, 3), sigma=(0.1, 1.5)),
+        ])
+    transform_list.extend([
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], 
                              std=[0.229, 0.224, 0.225])
     ])
+    return transforms.Compose(transform_list)
 
 def get_model(device=config.DEVICE, keep_layernorm=False):
     """
@@ -35,8 +68,10 @@ def get_model(device=config.DEVICE, keep_layernorm=False):
     cnn.eval()
     return cnn
 
-def extract_embedding(model, image_path, transform, device=config.DEVICE):
+def extract_embedding(model, image_path, transform=None, device=config.DEVICE):
     """Extracts a 1D embedding vector (768,) from a single image path."""
+    if transform is None:
+        transform = get_transform(augment=False)
     try:
         img = Image.open(image_path).convert("RGB")
         x = transform(img).unsqueeze(0).to(device)
@@ -54,7 +89,7 @@ class ImageListDataset(Dataset):
     def __init__(self, file_paths, labels=None, transform=None):
         self.file_paths = file_paths
         self.labels = labels
-        self.transform = transform if transform is not None else get_transform()
+        self.transform = transform if transform is not None else get_transform(augment=False)
 
     def __len__(self):
         return len(self.file_paths)
@@ -66,19 +101,20 @@ class ImageListDataset(Dataset):
             if self.transform:
                 image = self.transform(image)
         except Exception as e:
-            # Fallback to blank image if corrupted
             image = torch.zeros(3, 224, 224)
         
         if self.labels is not None:
             return image, self.labels[idx], str(path)
         return image, str(path)
 
-def extract_batch_features(model, file_paths, labels=None, batch_size=64, num_workers=2, device=config.DEVICE):
+def extract_batch_features(model, file_paths, labels=None, batch_size=64, num_workers=2, 
+                           device=config.DEVICE, augment=False):
     """
     Extracts embeddings for a list of file paths in batches using DataLoader.
-    Significantly faster than single-image extraction.
+    Optionally applies anti-shortcut perturbation augmentations.
     """
-    dataset = ImageListDataset(file_paths, labels=labels, transform=get_transform())
+    transform = get_transform(augment=augment)
+    dataset = ImageListDataset(file_paths, labels=labels, transform=transform)
     loader = DataLoader(
         dataset, 
         batch_size=batch_size, 

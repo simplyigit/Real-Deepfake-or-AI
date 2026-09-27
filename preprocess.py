@@ -51,6 +51,8 @@ def main():
                         help="Directory where output .npy files will be saved.")
     parser.add_argument("--keep-layernorm", action="store_true",
                         help="Preserve LayerNorm2d in ConvNeXt (recommended for new trainings).")
+    parser.add_argument("--augment", action="store_true",
+                        help="Apply anti-shortcut perturbations (JPEG compression, blur, jitter) during training extraction.")
     args = parser.parse_args()
 
     dataset_path = Path(args.dataset_dir)
@@ -81,12 +83,13 @@ def main():
     start_time = time.time()
 
     if train_paths:
-        print(f"\n3. Extracting training features (batch_size={args.batch_size})...")
+        print(f"\n3. Extracting training features (batch_size={args.batch_size}, augment={args.augment})...")
         X_train, y_train = utils.extract_batch_features(
             cnn, train_paths, train_labels, 
             batch_size=args.batch_size, 
             num_workers=args.num_workers,
-            device=config.DEVICE
+            device=config.DEVICE,
+            augment=args.augment
         )
         print("X_train shape:", X_train.shape, "y_train shape:", y_train.shape)
         np.save(output_path / 'X_train_ConvNeXt.npy', X_train)
